@@ -7,6 +7,7 @@ ClawCloud 自动登录脚本
 """
 
 import base64
+import datetime
 import os
 import random
 import re
@@ -186,9 +187,12 @@ class AutoLogin:
         self.logs = []
         self.n = 0
         
-        # 区域相关
-        self.detected_region = 'eu-central-1'  # 检测到的区域，如 "ap-southeast-1"
-        self.region_base_url = 'https://eu-central-1.run.claw.cloud'  # 检测到的区域基础 URL
+        # 区域相关：从 LOGIN_ENTRY_URL 自动提取默认值
+        parsed_entry = urlparse(LOGIN_ENTRY_URL)
+        entry_host = parsed_entry.netloc  # us-west-1.run.claw.cloud
+        entry_region = entry_host.split('.')[0]  # us-west-1
+        self.detected_region = entry_region
+        self.region_base_url = f"{parsed_entry.scheme}://{entry_host}"
         
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
@@ -226,37 +230,34 @@ class AutoLogin:
         """
         从 URL 中检测区域信息
         例如: https://ap-southeast-1.console.claw.cloud/... -> ap-southeast-1
+              https://us-west-1.run.claw.cloud/...         -> us-west-1
         """
         try:
             parsed = urlparse(url)
-            host = parsed.netloc  # 如 "ap-southeast-1.console.claw.cloud"
-            
-            # 检查是否是区域子域名格式
-            # 格式: {region}.console.claw.cloud
-            if host.endswith('.console.claw.cloud'):
-                region = host.replace('.console.claw.cloud', '')
-                if region and region != 'console':  # 排除无效情况
-                    self.detected_region = region
-                    self.region_base_url = f"https://{host}"
-                    self.log(f"检测到区域: {region}", "SUCCESS")
-                    self.log(f"区域 URL: {self.region_base_url}", "INFO")
-                    return region
-            
-            # 如果是主域名 console.run.claw.cloud，可能还没跳转
-            if 'console.run.claw.cloud' in host or 'claw.cloud' in host:
-                # 尝试从路径或其他地方提取区域信息
-                # 有些平台可能在路径中包含区域，如 /region/ap-southeast-1/...
-                path = parsed.path
-                region_match = re.search(r'/(?:region|r)/([a-z]+-[a-z]+-\d+)', path)
-                if region_match:
-                    region = region_match.group(1)
-                    self.detected_region = region
-                    self.region_base_url = f"https://{region}.console.claw.cloud"
-                    self.log(f"从路径检测到区域: {region}", "SUCCESS")
-                    return region
-            
+            host = parsed.netloc
+
+            # 匹配 {region}.console.claw.cloud 或 {region}.run.claw.cloud
+            for suffix in ['.console.claw.cloud', '.run.claw.cloud']:
+                if host.endswith(suffix):
+                    region = host.replace(suffix, '')
+                    if region:
+                        self.detected_region = region
+                        self.region_base_url = f"https://{host}"
+                        self.log(f"检测到区域: {region}", "SUCCESS")
+                        self.log(f"区域 URL: {self.region_base_url}", "INFO")
+                        return region
+
+            # 如果是主域名，尝试从路径中提取区域
+            path = parsed.path
+            region_match = re.search(r'/(?:region|r)/([a-z]+-[a-z]+-\d+)', path)
+            if region_match:
+                region = region_match.group(1)
+                self.detected_region = region
+                self.region_base_url = f"https://{region}.run.claw.cloud"
+                self.log(f"从路径检测到区域: {region}", "SUCCESS")
+                return region
+
             self.log(f"未检测到特定区域，使用当前域名: {host}", "INFO")
-            # 如果没有检测到区域，使用当前 URL 的基础部分
             self.region_base_url = f"{parsed.scheme}://{parsed.netloc}"
             return None
             
@@ -678,13 +679,16 @@ class AutoLogin:
         if not self.tg.ok:
             return
         
+        # 使用北京时间 (UTC+8)
+        china_time = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
+
         region_info = f"\n<b>区域:</b> {self.detected_region or '默认'}" if self.detected_region else ""
         
         msg = f"""<b>🤖 ClawCloud 自动登录</b>
 
 <b>状态:</b> {"✅ 成功" if ok else "❌ 失败"}
 <b>用户:</b> {self.username}{region_info}
-<b>时间:</b> {time.strftime('%Y-%m-%d %H:%M:%S')}"""
+<b>时间:</b> {china_time} (CST)"""
         
         if err:
             msg += f"\n<b>错误:</b> {err}"
