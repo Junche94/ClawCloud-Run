@@ -693,7 +693,7 @@ class AutoLogin:
         if err:
             msg += f"\n<b>错误:</b> {err}"
         
-        msg += "\n\n<b>日志:</b>\n" + "\n".join(self.logs[-6:])
+        msg += "\n\n<b>日志:</b>\n" + "\n".join(self.logs[-10:])
         
         self.tg.send(msg)
         
